@@ -2,39 +2,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import numpy as np
 from PIL import Image, ImageTk
-
-# ==========================================
-# 1. 核心算法：手动实现的 Numpy 插值
-#    (完全复用之前写的逻辑，符合大作业要求)
-# ==========================================
-class ManualInterpolationEngine:
-    def _resize_axis0(self, src, new_len):
-        old_len = src.shape[0]
-        if new_len <= 0: return src
-        scale = old_len / new_len
-        u = (np.arange(new_len) + 0.5) * scale - 0.5
-        u = np.clip(u, 0, old_len - 1)
-        x = np.floor(u).astype(int)
-        d = u - x
-        x_next = np.clip(x + 1, 0, old_len - 1)
-        shape_dims = [new_len] + [1] * (src.ndim - 1)
-        d = d.reshape(shape_dims)
-        return src[x] * (1 - d) + src[x_next] * d
-
-    def process_image(self, img_arr, target_w, target_h):
-        if img_arr is None: return None
-        target_w, target_h = int(target_w), int(target_h)
-        if target_w < 5 or target_h < 5: return img_arr # 最小限制
-        
-        # 移除 Alpha
-        if img_arr.ndim == 3 and img_arr.shape[2] == 4:
-            img_arr = img_arr[:, :, :3]
-
-        img_transposed = img_arr.transpose(1, 0, 2)
-        img_w_resized = self._resize_axis0(img_transposed, target_w)
-        img_back = img_w_resized.transpose(1, 0, 2)
-        final_img = self._resize_axis0(img_back, target_h)
-        return np.clip(final_img, 0, 255).astype(np.uint8)
+from interpolation import ManualInterpolationEngine
 
 # ==========================================
 # 2. Tkinter GUI：实现 PPT 式 8点拖拽
@@ -46,16 +14,21 @@ class ResizableImageApp:
         self.root.geometry("1000x800")
         
         self.engine = ManualInterpolationEngine()
-        self.original_array = None # 存储高清原图(Numpy)
-        self.current_image = None  # 当前显示的PIL图
-        self.tk_image = None       # Tkinter显示的图
-        
-        # 布局
+        self.original_array = None
+        self.current_image = None
+        self.tk_image = None
+
         btn_frame = tk.Frame(root)
         btn_frame.pack(fill=tk.X, pady=5)
         tk.Button(btn_frame, text="打开图片", command=self.load_image).pack(side=tk.LEFT, padx=10)
         tk.Label(btn_frame, text="操作提示：拖动红框的8个点来改变大小 -> 松手后触发算法缩放").pack(side=tk.LEFT, padx=10)
-        
+
+        # 新增：插值算法选择
+        self.method_var = tk.StringVar(value="bilinear")
+        method_menu = tk.OptionMenu(btn_frame, self.method_var, "nearest", "bilinear", "biquadratic", "bicubic")
+        method_menu.pack(side=tk.RIGHT, padx=10)
+        tk.Label(btn_frame, text="插值算法:").pack(side=tk.RIGHT)
+
         # 画布
         self.canvas = tk.Canvas(root, bg="gray", width=900, height=700)
         self.canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -158,25 +131,17 @@ class ResizableImageApp:
         self.redraw_canvas()
 
     def on_release(self, event):
-        """鼠标松开：执行算法，生成真正的高清图"""
-        if self.drag_data["type"] is None: return
-        
-        # 如果只是移动位置，不需要重算像素
+        if self.drag_data["type"] is None:
+            return
         if self.drag_data["type"] == "move":
             return
 
-        # 核心：调用你自己写的算法
-        print(f"触发重采样: 目标尺寸 {int(self.img_w)} x {int(self.img_h)}")
-        
-        # 调用手动插值引擎
+        # 读取当前算法
+        method = self.method_var.get()
+        self.engine.set_method(method)
+
+        print(f"触发重采样: 目标尺寸 {int(self.img_w)} x {int(self.img_h)}，算法: {method}")
         new_arr = self.engine.process_image(self.original_array, self.img_w, self.img_h)
-        
-        # 更新显示
         self.current_image = Image.fromarray(new_arr)
         self.redraw_canvas()
         self.drag_data["type"] = None
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = ResizableImageApp(root)
-    root.mainloop()
