@@ -76,58 +76,58 @@ class ManualInterpolationEngine:
         dst = wa[..., None] * a + wb[..., None] * b + wc[..., None] * c + wd[..., None] * d
         return np.clip(dst, 0, 255).astype(np.uint8)
 
+    def _quadratic(self, p0, p1, p2, t):
+        # Lagrange 二次插值
+        return p0 * (t - 1) * t / 2 - p1 * (t + 1) * (t - 1) + p2 * (t + 1) * t / 2
+
     def _resize_biquadratic(self, img, new_w, new_h):
-        # 二次插值向量化较难，这里仍用循环，但只对目标像素点循环
-        def quadratic_interp(p0, p1, p2, t):
-            return p1 + 0.5 * t * (p2 - p0 + t * (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p0 + t * (3.0 * (p1 - p2) + p0 - p2)))
         src_h, src_w = img.shape[:2]
         dst = np.zeros((new_h, new_w, img.shape[2]), dtype=np.float32)
         x = np.linspace(0, src_w - 1, new_w)
         y = np.linspace(0, src_h - 1, new_h)
         for i, yy in enumerate(y):
             y0 = int(np.floor(yy))
-            y1 = min(y0 + 1, src_h - 1)
-            y_ = yy - y0
-            y0m = max(y0 - 1, 0)
-            y2 = min(y0 + 2, src_h - 1)
+            t_y = yy - y0
+            y_indices = [max(y0 - 1, 0), y0, min(y0 + 1, src_h - 1)]
             for j, xx in enumerate(x):
                 x0 = int(np.floor(xx))
-                x1 = min(x0 + 1, src_w - 1)
-                x_ = xx - x0
-                x0m = max(x0 - 1, 0)
-                x2 = min(x0 + 2, src_w - 1)
-                col = np.zeros((3, img.shape[2]))
-                col[0] = quadratic_interp(img[y0m, x0], img[y0, x0], img[y1, x0], y_)
-                col[1] = quadratic_interp(img[y0m, x1], img[y0, x1], img[y1, x1], y_)
-                col[2] = quadratic_interp(img[y0m, x2], img[y0, x2], img[y1, x2], y_)
-                dst[i, j] = quadratic_interp(col[0], col[1], col[2], x_)
+                t_x = xx - x0
+                x_indices = [max(x0 - 1, 0), x0, min(x0 + 1, src_w - 1)]
+                patch = img[np.ix_(y_indices, x_indices)]
+                # 先对x方向做二次插值
+                col = np.array([self._quadratic(patch[k,0], patch[k,1], patch[k,2], t_x) for k in range(3)])
+                # 再对y方向做二次插值
+                dst[i, j] = self._quadratic(col[0], col[1], col[2], t_y)
         return np.clip(dst, 0, 255).astype(np.uint8)
 
-    def _cubic(self, a, b, c, d, t):
+    def _cubic(self, p0, p1, p2, p3, t):
+        # Catmull-Rom 三次插值
         return (
-            (-0.5*a + 1.5*b - 1.5*c + 0.5*d) * t**3 +
-            (a - 2.5*b + 2*c - 0.5*d) * t**2 +
-            (-0.5*a + 0.5*c) * t +
-            b
+            (-0.5*p0 + 1.5*p1 - 1.5*p2 + 0.5*p3) * t**3 +
+            (p0 - 2.5*p1 + 2*p2 - 0.5*p3) * t**2 +
+            (-0.5*p0 + 0.5*p2) * t +
+            p1
         )
 
     def _resize_bicubic(self, img, new_w, new_h):
-        # 仍然是逐点，但只循环目标像素点，已较快
         src_h, src_w = img.shape[:2]
         dst = np.zeros((new_h, new_w, img.shape[2]), dtype=np.float32)
         x = np.linspace(0, src_w - 1, new_w)
         y = np.linspace(0, src_h - 1, new_h)
         for i, yy in enumerate(y):
-            y_int = int(np.floor(yy))
-            y_ = yy - y_int
-            y_indices = [min(max(y_int + n, 0), src_h - 1) for n in [-1, 0, 1, 2]]
+            y0 = int(np.floor(yy))
+            t_y = yy - y0
+            # 取4个y索引，超出边界时用边界值
+            y_indices = [np.clip(y0 + k, 0, src_h - 1) for k in [-1, 0, 1, 2]]
             for j, xx in enumerate(x):
-                x_int = int(np.floor(xx))
-                x_ = xx - x_int
-                x_indices = [min(max(x_int + n, 0), src_w - 1) for n in [-1, 0, 1, 2]]
-                patch = img[np.ix_(y_indices, x_indices)]
-                col = np.zeros((4, img.shape[2]))
-                for k in range(4):
-                    col[k] = self._cubic(*patch[k], x_)
-                dst[i, j] = self._cubic(*col, y_)
+                x0 = int(np.floor(xx))
+                t_x = xx - x0
+                # 取4个x索引，超出边界时用边界值
+                x_indices = [np.clip(x0 + k, 0, src_w - 1) for k in [-1, 0, 1, 2]]
+                # 取4x4邻域
+                patch = img[np.ix_(y_indices, x_indices)]  # shape: (4,4,3)
+                # 先对每一行做x方向三次插值
+                inter_row = np.array([self._cubic(*patch[k, :, :], t_x) for k in range(4)])
+                # 再对y方向做三次插值
+                dst[i, j] = self._cubic(*inter_row, t_y)
         return np.clip(dst, 0, 255).astype(np.uint8)
