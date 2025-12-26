@@ -2,17 +2,17 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import numpy as np
 from PIL import Image, ImageTk
-from interpolation import ManualInterpolationEngine
+from interpolation import InterpolationEngine
 
-class ResizableImageAppWindow:
+class ResizableImageApp:
     def __init__(self, root):
         self.root = root
         self.root.title("2D图像缩放 - 拖拽/窗口输入双模式")
         self.root.geometry("1000x750")
 
-        # ========== 基本功能 ==========
+        # 基本功能
         # 插值引擎
-        self.engine = ManualInterpolationEngine()
+        self.engine = InterpolationEngine()
         self.original_array = None  # 原始图片数据
         self.current_image = None   # 当前显示的PIL图片
         self.tk_image = None        # Tkinter显示图片
@@ -27,7 +27,7 @@ class ResizableImageAppWindow:
         self.input_w = tk.IntVar(value=0)             # 输入宽
         self.input_h = tk.IntVar(value=0)             # 输入高
 
-        # ========== 基本功能：GUI界面 ==========
+        # GUI界面
         btn_frame = tk.Frame(root)
         btn_frame.pack(fill=tk.X, pady=5)
         tk.Button(btn_frame, text="打开图片", command=self.load_image).pack(side=tk.LEFT, padx=20)
@@ -38,35 +38,35 @@ class ResizableImageAppWindow:
             font=("微软雅黑", 11)
         ).pack(side=tk.LEFT, padx=20)
 
-        # ========== 附加功能：模式切换 ==========
+        # 模式切换
         self.mode_btn = tk.Button(btn_frame, text="切换为窗口输入模式", command=self.toggle_mode)
         self.mode_btn.pack(side=tk.RIGHT, padx=10)
 
-        # ========== 基本功能：插值算法选择 ==========
+        # 插值算法选择
         self.method_var = tk.StringVar(value="bilinear")
         method_menu = tk.OptionMenu(btn_frame, self.method_var, "nearest", "bilinear", "biquadratic", "bicubic")
         method_menu.pack(side=tk.RIGHT, padx=10)
         tk.Label(btn_frame, text="插值算法:").pack(side=tk.RIGHT)
 
-        # ========== 附加功能：撤销、回到原图、保存 ==========
+        # 撤销、回到原图、保存
         self.undo_stack = []  # 撤销历史栈
         tk.Button(btn_frame, text="保存图片", command=self.save_image).pack(side=tk.RIGHT, padx=10)
         tk.Button(btn_frame, text="回到原图", command=self.reset_image).pack(side=tk.RIGHT, padx=10)
         tk.Button(btn_frame, text="撤销", command=self.undo).pack(side=tk.RIGHT, padx=10)
 
-        # ========== 基本功能：画布显示 ==========
+        # 画布显示
         self.canvas = tk.Canvas(root, bg="gray", width=600, height=400)
         self.canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # ========== 基本功能：窗口输入区 ==========
+        # 窗口输入区 
         self.input_frame = tk.Frame(root)
         self.input_frame.pack(fill=tk.X, pady=5)
-        tk.Label(self.input_frame, text="宽:", font=("微软雅黑", 12, "bold")).pack(side=tk.LEFT, padx=(5,0))
-        self.entry_w = tk.Entry(self.input_frame, textvariable=self.input_w, width=30)
-        self.entry_w.pack(side=tk.LEFT, padx=(0,5))
-        tk.Label(self.input_frame, text="高:", font=("微软雅黑", 12, "bold")).pack(side=tk.LEFT)
+        tk.Label(self.input_frame, text="高:", font=("微软雅黑", 12, "bold")).pack(side=tk.LEFT, padx=(5,0))
         self.entry_h = tk.Entry(self.input_frame, textvariable=self.input_h, width=30)
         self.entry_h.pack(side=tk.LEFT, padx=(0,5))
+        tk.Label(self.input_frame, text="宽:", font=("微软雅黑", 12, "bold")).pack(side=tk.LEFT)
+        self.entry_w = tk.Entry(self.input_frame, textvariable=self.input_w, width=30)
+        self.entry_w.pack(side=tk.LEFT, padx=(0,5))
         tk.Label(self.input_frame, text="缩放倍数:", font=("微软雅黑", 12, "bold")).pack(side=tk.LEFT)
         self.entry_scale = tk.Entry(self.input_frame, textvariable=self.scale_var, width=36)
         self.entry_scale.pack(side=tk.LEFT, padx=(0,5))
@@ -88,7 +88,7 @@ class ResizableImageAppWindow:
         self.canvas.bind("<B1-Motion>", self.on_drag)
         self.canvas.bind("<ButtonRelease-1>", self.on_release)
 
-    # ========== 附加功能：模式切换 ==========
+    # 模式切换
     def toggle_mode(self):
         if self.mode.get() == "drag":
             self.mode.set("window")
@@ -99,7 +99,7 @@ class ResizableImageAppWindow:
             self.mode_btn.config(text="切换为窗口输入模式")
             self.input_frame.pack_forget()
 
-    # ========== 基本功能：加载图片并适配显示 ==========
+    # 加载图片并适配显示
     def load_image(self):
         file_path = filedialog.askopenfilename(filetypes=[("Images", "*.jpg *.png *.jpeg")])
         if not file_path: return
@@ -132,7 +132,7 @@ class ResizableImageAppWindow:
         self.scale_var.set(1.0)
         self.redraw_canvas()
 
-    # ========== 基本功能：重绘画布 ==========
+    # 重绘画布
     def redraw_canvas(self):
         self.canvas.delete("all")
         if self.current_image is None: return
@@ -156,7 +156,7 @@ class ResizableImageAppWindow:
         for hx, hy, tag in handles:
             self.canvas.create_rectangle(hx-r, hy-r, hx+r, hy+r, fill="white", outline="black", tags=("handle", tag))
 
-    # ========== 附加功能：拖拽缩放 ==========
+    # 拖拽缩放
     def on_press(self, event):
         if self.mode.get() != "drag": return
         item = self.canvas.find_closest(event.x, event.y)[0]
@@ -195,7 +195,7 @@ class ResizableImageAppWindow:
         if self.drag_data["type"] == "move": return
         method = self.method_var.get()
         self.engine.set_method(method)
-        # 保存历史（附加功能）
+        # 保存历史
         self.undo_stack.append(self.current_image.copy())
         print(f"拖拽重采样: {int(self.img_w)} x {int(self.img_h)}，算法: {method}")
         new_arr = self.engine.process_image(self.original_array, self.img_w, self.img_h)
@@ -206,7 +206,7 @@ class ResizableImageAppWindow:
         self.redraw_canvas()
         self.drag_data["type"] = None
 
-    # ========== 基本功能：窗口输入区联动 ==========
+    # 窗口输入区联动 
     def on_input_w(self, event=None):
         if not self.lock_ratio.get(): return
         try:
@@ -252,7 +252,7 @@ class ResizableImageAppWindow:
                 self.input_h.set(h)
                 self.scale_var.set(w / orig_w)
 
-    # ========== 基本功能：应用窗口输入缩放 ==========
+    # 应用窗口输入缩放
     def apply_window_resize(self):
         if self.original_array is None: return
         try:
@@ -263,9 +263,9 @@ class ResizableImageAppWindow:
                 return
             method = self.method_var.get()
             self.engine.set_method(method)
-            # 保存历史（附加功能）
+            # 保存历史
             self.undo_stack.append(self.current_image.copy())
-            print(f"窗口输入重采样: {w} x {h}，算法: {method}")
+            print(f"窗口输入重采样: {w} x {h}，插值算法: {method}")
             new_arr = self.engine.process_image(self.original_array, w, h)
             self.current_image = Image.fromarray(new_arr)
             self.img_w, self.img_h = w, h
@@ -273,7 +273,7 @@ class ResizableImageAppWindow:
         except Exception as e:
             messagebox.showerror("错误", f"输入有误: {e}")
 
-    # ========== 附加功能：撤销 ==========
+    # 撤销 
     def undo(self):
         if self.undo_stack:
             self.current_image = self.undo_stack.pop()
@@ -285,7 +285,7 @@ class ResizableImageAppWindow:
         else:
             messagebox.showinfo("提示", "没有可撤销的操作。")
 
-    # ========== 附加功能：回到原图 ==========
+    # 重置图片 
     def reset_image(self):
         if self.original_array is not None:
             pil_img = Image.fromarray(self.original_array)
@@ -297,7 +297,7 @@ class ResizableImageAppWindow:
             self.undo_stack.clear()
             self.redraw_canvas()
 
-    # ========== 基本功能：保存图片 ==========
+    # 保存图片
     def save_image(self):
         if self.current_image is None:
             messagebox.showerror("错误", "没有图片可保存！")
